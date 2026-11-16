@@ -1,54 +1,105 @@
-from flask import Flask, request, redirect, render_template_string, send_from_directory, session
+
+from flask import (
+    Flask, request, redirect, url_for, render_template_string,
+    session, send_from_directory
+)
 from werkzeug.utils import secure_filename
 from functools import wraps
+from datetime import datetime
 import os
 import json
 import uuid
-from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
+app.secret_key = os.environ.get("SECRET_KEY", "pluto-gaming-secret")
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "ambadijayesh")
+ADMIN_PASSWORD = "ambadijayesh"
 
-FOLDERS = {
-    "photos": "photos",
-    "videos": "uploads",
-    "wallpapers": "wallpapers",
-    "clips": "clips"
+UPLOAD_FOLDER = "uploads"
+STATIC_FOLDER = "static"
+DATA_FILE = "data.json"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
+
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
+INSTAGRAMS = [
+    {
+        "name": "@Pluto_ser_her",
+        "url": "https://www.instagram.com/Pluto_ser_her/"
+    },
+    {
+        "name": "@_kerala_kings_2027",
+        "url": "https://www.instagram.com/_kerala_kings_2027/"
+    },
+    {
+        "name": "@_psycho_ssss",
+        "url": "https://www.instagram.com/_psycho_ssss/"
+    }
+]
+
+ALLOWED_EXTENSIONS = {
+    "png", "jpg", "jpeg", "gif", "webp",
+    "mp4", "webm", "mov"
 }
 
-ALLOWED = {
-    "photos": (".jpg", ".jpeg", ".png", ".webp", ".gif"),
-    "videos": (".mp4", ".webm", ".mov", ".mkv"),
-    "wallpapers": (".jpg", ".jpeg", ".png", ".webp"),
-    "clips": (".mp4", ".webm", ".mov", ".mkv")
-}
-
-for folder in FOLDERS.values():
-    os.makedirs(folder, exist_ok=True)
-
-DATA_FILE = "pluto_data.json"
 
 def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {
+            "posts": [],
+            "notifications": [],
+            "messages": [],
+            "likes": {},
+            "comments": {}
+        }
+
     try:
         with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"likes": {}, "comments": {}, "notifications": [], "messages": []}
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        data = {}
+
+    data.setdefault("posts", [])
+    data.setdefault("notifications", [])
+    data.setdefault("messages", [])
+    data.setdefault("likes", {})
+    data.setdefault("comments", {})
+
+    return data
+
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=4)
+
 
 def admin_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if not session.get("admin"):
-            return "Unauthorized", 401
+            return redirect(url_for("login"))
         return func(*args, **kwargs)
     return wrapper
+
+
+def render_page(page, **kwargs):
+    data = load_data()
+
+    return render_template_string(
+        HTML,
+        page=page,
+        admin=session.get("admin", False),
+        instagrams=INSTAGRAMS,
+        posts=data["posts"],
+        notifications=data["notifications"],
+        messages=data["messages"],
+        likes=data["likes"],
+        comments=data["comments"],
+        **kwargs
+    )
+
 
 HTML = """
 <!DOCTYPE html>
@@ -56,299 +107,518 @@ HTML = """
 <head>
 <title>PLUTO GAMING</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#050505;color:white;font-family:Arial;overflow-x:hidden}
-header{text-align:center;padding:35px 15px;background:linear-gradient(135deg,#080808,#250000,#080808);border-bottom:2px solid red;box-shadow:0 0 25px #ff101055}
-header h1{font-size:36px;color:#ff2020;letter-spacing:5px;text-shadow:0 0 15px red;animation:glow 2s infinite alternate;margin:0}
-header p{color:#ddd;letter-spacing:3px;font-size:12px}
-@keyframes glow{to{text-shadow:0 0 30px red,0 0 45px red}}
-.container{padding:18px;max-width:850px;margin:auto}
-.card{background:linear-gradient(145deg,#171717,#090909);border:1px solid #5b0808;padding:20px;margin:18px 0;border-radius:12px;box-shadow:0 0 15px #ff000022;animation:fade 1s}
-@keyframes fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-h2{color:#ff3030;text-transform:uppercase}
-button{background:linear-gradient(90deg,#8b0000,#ff1717);color:white;border:1px solid #ff5555;padding:12px 18px;border-radius:7px;font-weight:bold;cursor:pointer;margin:5px}
-input,textarea,select{width:100%;max-width:100%;margin:10px 0;padding:11px;background:#171717;color:white;border:1px solid #aa1515;border-radius:6px}
-textarea{min-height:75px}
-video,img.media{width:100%;max-height:430px;object-fit:contain;border-radius:10px;border:1px solid #ff2525}
-a{color:#ff5555;text-decoration:none}
-.section-title{border-left:4px solid red;padding-left:12px;margin-top:30px}
-.tag{display:inline-block;color:#ff3030;border:1px solid #ff3030;padding:7px 12px;margin:5px;border-radius:20px;font-size:12px}
-footer{text-align:center;padding:25px;color:#777;border-top:1px solid #5b0808}
-.notice{border-left:3px solid red;padding:10px;background:#200707;margin:10px 0}
-.small{color:#aaa;font-size:12px}
-.search{border:1px solid red;font-size:16px}
-.particle{position:fixed;bottom:-10px;width:4px;height:4px;background:red;border-radius:50%;box-shadow:0 0 10px red;pointer-events:none;animation:rise 7s linear infinite;z-index:-1}
-@keyframes rise{to{transform:translateY(-110vh);opacity:0}}
-.hidden{display:none}
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #080714;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+.background-video {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: -3;
+    opacity: 0.22;
+}
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 7, 20, 0.72);
+    z-index: -2;
+}
+
+header {
+    background: linear-gradient(
+        120deg, rgba(37,0,79,.95), rgba(80,0,160,.95)
+    );
+    padding: 45px 10px;
+}
+
+h1 {
+    color: #00eaff;
+    font-size: 30px;
+    margin: 0 0 18px;
+}
+
+.subtitle {
+    font-size: 12px;
+    letter-spacing: 1px;
+}
+
+.container {
+    max-width: 600px;
+    margin: 30px auto;
+    padding: 0 15px;
+}
+
+.card {
+    background: rgba(25,23,44,.94);
+    margin: 15px 0;
+    padding: 25px 15px;
+    border-radius: 15px;
+    border: 1px solid #34245c;
+}
+
+.card h2 {
+    font-size: 19px;
+    margin-bottom: 20px;
+    color: #00eaff;
+}
+
+.card p {
+    color: #ddd;
+    font-size: 14px;
+}
+
+.btn {
+    display: inline-block;
+    background: #7025ff;
+    color: white;
+    padding: 13px 22px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    margin: 5px;
+    border: none;
+    cursor: pointer;
+}
+
+.btn:active {
+    background: #4c00c9;
+}
+
+input, textarea {
+    width: 95%;
+    padding: 12px;
+    margin: 8px 0;
+    border: 1px solid #7025ff;
+    border-radius: 8px;
+    background: #080714;
+    color: white;
+}
+
+.search {
+    width: 95%;
+    padding: 14px;
+    border-radius: 10px;
+    background: #19172c;
+    color: white;
+    border: 1px solid #7025ff;
+}
+
+.post img, .post video {
+    width: 100%;
+    max-height: 350px;
+    object-fit: contain;
+    border-radius: 10px;
+    margin-top: 10px;
+}
+
+.post {
+    background: #100e20;
+    border-radius: 12px;
+    padding: 15px;
+    margin: 15px 0;
+    overflow-wrap: anywhere;
+}
+
+.post p {
+    color: white;
+}
+
+.comment {
+    background: #25213b;
+    padding: 8px;
+    margin: 5px;
+    border-radius: 8px;
+    text-align: left;
+}
+
+footer {
+    color: #888;
+    padding: 20px;
+    font-size: 12px;
+}
+
+.red-particle {
+    position: fixed;
+    width: 4px;
+    height: 4px;
+    background: red;
+    border-radius: 50%;
+    box-shadow: 0 0 10px red;
+    pointer-events: none;
+    z-index: 5;
+    animation: particle 5s linear infinite;
+}
+
+@keyframes particle {
+    from {
+        transform: translateY(100vh);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+}
+
+a {
+    color: #00eaff;
+}
+
 </style>
 </head>
+
 <body>
 
+<video class="background-video" autoplay muted loop playsinline>
+    <source src="/static/background.mp4" type="video/mp4">
+</video>
+<div class="overlay"></div>
+
 <header>
-<h1>PLUTO GAMING</h1>
-<p>UNLEASH YOUR GAMING POWER</p>
-<div>
-<span class="tag">BGMI GAMING</span>
-<span class="tag">VIDEOS</span>
-<span class="tag">HIGHLIGHTS</span>
-</div>
+    <h1>PLUTO GAMING</h1>
+    <div class="subtitle">WELCOME TO MY GAMING WORLD</div>
 </header>
 
 <div class="container">
 
+{% if page == "home" %}
+
 <div class="card">
-<h2>Welcome To Pluto Gaming</h2>
-<p>Enter the battleground. Experience gaming highlights and latest updates.</p>
+    <h2>PLUTO SER</h2>
+    <p>Official Gaming Website</p>
+    <p>BGMI | GAMING | ENTERTAINMENT</p>
 </div>
 
-<input class="search" id="search" placeholder="🔍 Search photos, videos, clips...">
-
-{% if notifications %}
 <div class="card">
-<h2>🔔 Notifications</h2>
-{% for n in notifications %}
-<div class="notice">{{ n.text }}<div class="small">{{ n.date }}</div></div>
-{% endfor %}
+    <h2>INSTAGRAM ACCOUNTS</h2>
+    <p>Follow our Instagram accounts</p>
+    {% for account in instagrams %}
+        <a class="btn" href="{{ account.url }}" target="_blank">
+            {{ account.name }}
+        </a>
+    {% endfor %}
 </div>
+
+<div class="card">
+    <h2>SEARCH GAMING POSTS</h2>
+    <input class="search" id="search"
+           placeholder="Search gaming posts..."
+           oninput="searchPosts()">
+</div>
+
+<div class="card">
+    <h2>NOTIFICATIONS</h2>
+    {% for n in notifications %}
+        <p>🔔 {{ n.text }}</p>
+    {% else %}
+        <p>No notifications yet.</p>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <h2>GAMING GALLERY</h2>
+
+    {% for post in posts %}
+    <div class="post searchable">
+        <h3>{{ post.title }}</h3>
+        <p>{{ post.caption }}</p>
+
+        {% if post.type == "video" %}
+            <video controls>
+                <source src="/{{ post.file }}">
+            </video>
+        {% else %}
+            <img src="/{{ post.file }}" alt="Gaming image">
+        {% endif %}
+
+        <p>❤️ {{ likes.get(post.id, 0) }}</p>
+
+        <form method="POST"
+              action="{{ url_for('like_post', post_id=post.id) }}">
+            <button class="btn">LIKE</button>
+        </form>
+
+        <form method="POST"
+              action="{{ url_for('comment_post', post_id=post.id) }}">
+            <input name="comment" placeholder="Write a comment..." required>
+            <button class="btn">COMMENT</button>
+        </form>
+
+        {% for c in comments.get(post.id, []) %}
+            <div class="comment">{{ c }}</div>
+        {% endfor %}
+<form action="{{ url_for('delete_post', post_id=post.id) }}" method="POST"
+      onsubmit="return confirm('Are you sure you want to delete this post?');">
+    <button type="submit"
+            style="background:red;color:white;padding:10px 20px;border:none;border-radius:8px;cursor:pointer;">
+        🗑 DELETE POST
+    </button>
+</form>
+
+    </div>
+    {% else %}
+        <p>Coming Soon...</p>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <h2>CONTACT ADMIN</h2>
+    <form method="POST" action="{{ url_for('contact') }}">
+        <input name="name" placeholder="Your name" required>
+        <textarea name="message" placeholder="Your message"
+                  required></textarea>
+        <button class="btn">SEND MESSAGE</button>
+    </form>
+</div>
+
+{% elif page == "login" %}
+
+<div class="card">
+    <h2>ADMIN LOGIN</h2>
+    <form method="POST">
+        <input type="password" name="password"
+               placeholder="Admin password" required>
+        <button class="btn">LOGIN</button>
+    </form>
+</div>
+
+{% elif page == "admin" %}
+
+<div class="card">
+    <h2>ADMIN PANEL</h2>
+    <p>Welcome Admin</p>
+    <a class="btn" href="{{ url_for('home') }}">HOME</a>
+    <a class="btn" href="{{ url_for('logout') }}">LOGOUT</a>
+</div>
+
+<div class="card">
+    <h2>UPLOAD GAMING PHOTO / VIDEO</h2>
+    <form method="POST" action="{{ url_for('upload') }}"
+          enctype="multipart/form-data">
+        <input name="title" placeholder="Post title" required>
+        <textarea name="caption" placeholder="Post caption"></textarea>
+        <input type="file" name="file" accept="image/*,video/*" required>
+        <button class="btn">UPLOAD</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>ADD NOTIFICATION</h2>
+    <form method="POST" action="{{ url_for('add_notification') }}">
+        <input name="text" placeholder="Notification text" required>
+        <button class="btn">ADD NOTIFICATION</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>CONTACT MESSAGES</h2>
+    {% for m in messages %}
+        <div class="comment">
+            <b>{{ m.name }}</b>
+            <p>{{ m.message }}</p>
+            <small>{{ m.date }}</small>
+        </div>
+    {% else %}
+        <p>No messages.</p>
+    {% endfor %}
+</div>
+
 {% endif %}
 
-{% if admin %}
-<div class="card">
-<h2>Admin Dashboard</h2>
-<form action="/upload" method="POST" enctype="multipart/form-data">
-<select name="kind" required>
-<option value="videos">Upload Video</option>
-<option value="photos">Upload Photo</option>
-<option value="wallpapers">Upload Wallpaper</option>
-<option value="clips">Upload Gaming Clip</option>
-</select>
-<input type="file" name="file" required>
-<button type="submit">UPLOAD</button>
-</form>
-
-<h2>Post Notification</h2>
-<form action="/notify" method="POST">
-<input name="text" placeholder="Notification message" required>
-<button>POST NOTIFICATION</button>
-</form>
-
-<h2>Admin Messages</h2>
-{% for m in messages %}
-<div class="notice">{{ m.text }}<div class="small">{{ m.date }}</div></div>
-{% else %}
-<p>No messages yet.</p>
-{% endfor %}
-<a href="/logout">Logout</a>
-</div>
-{% else %}
-<div class="card">
-<h2>Admin Login</h2>
-<form action="/login" method="POST">
-<input type="password" name="password" placeholder="Admin password" required>
-<button>LOGIN</button>
-</form>
-</div>
-{% endif %}
-
-{% for section in sections %}
-<h2 class="section-title">{{ section.title }}</h2>
-{% for item in section["items"] %}
-<div class="card media-card" data-search="{{ item.filename|lower }} {{ section.title|lower }}">
-{% if item.kind in ["videos","clips"] %}
-<video controls preload="metadata">
-<source src="/media/{{ item.kind }}/{{ item.filename }}">
-</video>
-{% else %}
-<img class="media" src="/media/{{ item.kind }}/{{ item.filename }}" loading="lazy">
-{% endif %}
-<p>{{ item.filename }}</p>
-<form action="/like" method="POST">
-<input type="hidden" name="key" value="{{ item.key }}">
-<button>❤️ LIKE ({{ item.likes }})</button>
-</form>
-<h3>Comments</h3>
-{% for c in item.comments %}
-<div class="notice">{{ c }}</div>
-{% endfor %}
-<form action="/comment" method="POST">
-<input type="hidden" name="key" value="{{ item.key }}">
-<input name="comment" placeholder="Write a comment..." maxlength="300" required>
-<button>COMMENT</button>
-</form>
-</div>
-{% else %}
-<div class="card">No {{ section.title|lower }} uploaded yet.</div>
-{% endfor %}
-{% endfor %}
-
-<div class="card">
-<h2>Contact Admin</h2>
-<form action="/contact" method="POST">
-<input name="name" placeholder="Your name" maxlength="50" required>
-<textarea name="message" placeholder="Your message" maxlength="1000" required></textarea>
-<button>SEND MESSAGE</button>
-</form>
 </div>
 
-<div class="card">
-<h2>Instagram</h2>
-<a href="https://www.instagram.com/pluto_ser_her/" target="_blank">
-<button>VISIT INSTAGRAM</button>
-</a>
-</div>
-
-</div>
 <footer>PLUTO GAMING © 2026</footer>
 
 <script>
-const search = document.getElementById("search");
-search.addEventListener("input", () => {
- const q = search.value.toLowerCase();
- document.querySelectorAll(".media-card").forEach(card => {
-  card.classList.toggle("hidden", !card.dataset.search.includes(q));
- });
-});
+function searchPosts() {
+    let value = document.getElementById("search").value.toLowerCase();
 
-for(let i=0;i<25;i++){
- const p=document.createElement("div");
- p.className="particle";
- p.style.left=Math.random()*100+"%";
- p.style.animationDelay=Math.random()*7+"s";
- p.style.animationDuration=(5+Math.random()*6)+"s";
- document.body.appendChild(p);
+    document.querySelectorAll(".searchable").forEach(function(post) {
+        post.style.display =
+            post.innerText.toLowerCase().includes(value) ? "" : "none";
+    });
+}
+
+for (let i = 0; i < 20; i++) {
+    let particle = document.createElement("div");
+    particle.className = "red-particle";
+    particle.style.left = Math.random() * 100 + "vw";
+    particle.style.animationDelay = Math.random() * 5 + "s";
+    document.body.appendChild(particle);
 }
 </script>
+
 </body>
 </html>
 """
 
+
 @app.route("/")
 def home():
-    data = load_data()
-    sections = []
+    return render_page("home")
 
-    titles = {
-        "photos": "Photo Gallery",
-        "wallpapers": "Gaming Wallpapers",
-        "videos": "Video Gallery",
-        "clips": "Gaming Clips"
-    }
 
-    for kind, title in titles.items():
-        items = []
-        folder = FOLDERS[kind]
-        for filename in sorted(os.listdir(folder), reverse=True):
-            path = os.path.join(folder, filename)
-            if not os.path.isfile(path):
-                continue
-            key = kind + ":" + filename
-            items.append({
-                "kind": kind,
-                "filename": filename,
-                "key": key,
-                "likes": data["likes"].get(key, 0),
-                "comments": data["comments"].get(key, [])
-            })
-        sections.append({"title": title, "items": items})
-
-    return render_template_string(
-        HTML,
-        sections=sections,
-        admin=session.get("admin", False),
-        notifications=data["notifications"],
-        messages=data["messages"] if session.get("admin") else []
-    )
-
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.form.get("password") == ADMIN_PASSWORD:
-        session["admin"] = True
-        return redirect("/")
-    return "Wrong password", 401
+    if request.method == "POST":
+        if request.form.get("password") == ADMIN_PASSWORD:
+            session["admin"] = True
+            return redirect(url_for("admin"))
+        return render_page("login", error="Wrong password")
+
+    return render_page("login")
+
+
+@app.route("/admin")
+@admin_required
+def admin():
+    return render_page("admin")
+
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    return redirect("/")
+    session.pop("admin", None)
+    return redirect(url_for("home"))
+
 
 @app.route("/upload", methods=["POST"])
 @admin_required
 def upload():
-    kind = request.form.get("kind")
     file = request.files.get("file")
 
-    if kind not in FOLDERS or not file or not file.filename:
-        return "Invalid upload", 400
+    if not file or not file.filename:
+        return redirect(url_for("admin"))
 
     filename = secure_filename(file.filename)
-    if not filename or not filename.lower().endswith(ALLOWED[kind]):
-        return "Unsupported file type", 400
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-    filename = uuid.uuid4().hex[:8] + "_" + filename
-    file.save(os.path.join(FOLDERS[kind], filename))
-    return redirect("/")
+    if ext not in ALLOWED_EXTENSIONS:
+        return "File type not allowed", 400
 
-@app.route("/media/<kind>/<path:filename>")
-def media(kind, filename):
-    if kind not in FOLDERS:
-        return "Not found", 404
-    return send_from_directory(FOLDERS[kind], filename)
+    new_name = str(uuid.uuid4()) + "." + ext
+    file.save(os.path.join(UPLOAD_FOLDER, new_name))
 
-@app.route("/like", methods=["POST"])
-def like():
-    key = request.form.get("key", "")
-    if ":" not in key:
-        return "Invalid item", 400
-    kind, filename = key.split(":", 1)
-    if kind not in FOLDERS or not os.path.isfile(os.path.join(FOLDERS[kind], filename)):
-        return "Not found", 404
     data = load_data()
-    data["likes"][key] = data["likes"].get(key, 0) + 1
-    save_data(data)
-    return redirect("/")
 
-@app.route("/comment", methods=["POST"])
-def comment():
-    key = request.form.get("key", "")
-    message = request.form.get("comment", "").strip()
-    if ":" not in key or not message:
-        return "Invalid comment", 400
-    kind, filename = key.split(":", 1)
-    if kind not in FOLDERS or not os.path.isfile(os.path.join(FOLDERS[kind], filename)):
-        return "Not found", 404
+    post_type = "video" if ext in {"mp4", "webm", "mov"} else "image"
+
+    data["posts"].insert(0, {
+        "id": str(uuid.uuid4()),
+        "title": request.form.get("title", "Gaming Post"),
+        "caption": request.form.get("caption", ""),
+        "file": "uploads/" + new_name,
+        "type": post_type,
+        "date": datetime.now().strftime("%d-%m-%Y")
+    })
+
+    save_data(data)
+    return redirect(url_for("admin"))
+
+
+@app.route("/like/<post_id>", methods=["POST"])
+def like_post(post_id):
     data = load_data()
-    data["comments"].setdefault(key, []).append(message[:300])
-    save_data(data)
-    return redirect("/")
 
-@app.route("/notify", methods=["POST"])
-@admin_required
-def notify():
-    message = request.form.get("text", "").strip()
-    if message:
-        data = load_data()
-        data["notifications"].insert(0, {
-            "text": message[:300],
-            "date": datetime.now().strftime("%d-%m-%Y %I:%M %p")
-        })
-        data["notifications"] = data["notifications"][:20]
+    if any(p["id"] == post_id for p in data["posts"]):
+        data["likes"][post_id] = data["likes"].get(post_id, 0) + 1
         save_data(data)
-    return redirect("/")
+
+    return redirect(url_for("home"))
+
+
+@app.route("/comment/<post_id>", methods=["POST"])
+def comment_post(post_id):
+    data = load_data()
+    comment = request.form.get("comment", "").strip()
+
+    if comment and any(p["id"] == post_id for p in data["posts"]):
+        data["comments"].setdefault(post_id, []).append(comment[:500])
+        save_data(data)
+
+    return redirect(url_for("home"))
+
 
 @app.route("/contact", methods=["POST"])
 def contact():
     name = request.form.get("name", "").strip()
     message = request.form.get("message", "").strip()
+
     if name and message:
         data = load_data()
-        data["messages"].insert(0, {
-            "text": name[:50] + ": " + message[:1000],
-            "date": datetime.now().strftime("%d-%m-%Y %I:%M %p")
+        data["messages"].append({
+            "name": name[:80],
+            "message": message[:1000],
+            "date": datetime.now().strftime("%d-%m-%Y %H:%M")
         })
-        data["messages"] = data["messages"][:100]
         save_data(data)
-    return redirect("/")
+
+    return redirect(url_for("home"))
+
+
+@app.route("/notification", methods=["POST"])
+@admin_required
+def add_notification():
+    text = request.form.get("text", "").strip()
+
+    if text:
+        data = load_data()
+        data["notifications"].insert(0, {
+            "text": text[:300],
+            "date": datetime.now().strftime("%d-%m-%Y")
+        })
+        save_data(data)
+
+    return redirect(url_for("admin"))
+
+
+@app.route("/delete/<post_id>", methods=["POST"])
+@admin_required
+def delete_post(post_id):
+    data = load_data()
+
+    post = next(
+        (p for p in data["posts"] if p["id"] == post_id),
+        None
+    )
+
+    if post:
+        data["posts"] = [
+            p for p in data["posts"] if p["id"] != post_id
+        ]
+        data["likes"].pop(post_id, None)
+        data["comments"].pop(post_id, None)
+
+        filepath = post.get("file", "")
+        if filepath.startswith("uploads/"):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+
+        save_data(data)
+
+    return redirect(url_for("admin"))
+
+
+@app.route("/uploads/<path:filename>")
+def uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001)
+
