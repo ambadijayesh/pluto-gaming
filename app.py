@@ -1,4 +1,3 @@
-cat > app.py <<'PY'
 from flask import Flask, request, redirect, render_template_string, send_from_directory, session
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -124,4 +123,3 @@ def videos(filename):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001)
-PY
