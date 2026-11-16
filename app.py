@@ -11,7 +11,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-this-password")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "ambadijayesh")
 
 HTML = """
 <!DOCTYPE html>
