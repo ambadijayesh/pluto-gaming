@@ -307,8 +307,9 @@ a {
     <h2>INSTAGRAM ACCOUNTS</h2>
     <p>Follow our Instagram accounts</p>
     {% for account in instagrams %}
-        <a class="btn" href="{{ account.url }}" target="_blank">
-            {{ account.name }}
+        <p>{{ account.name }}</p>
+        <a class="btn" href="{{ account.url }}" target="_blank" rel="noopener noreferrer">
+            VISIT INSTAGRAM
         </a>
     {% endfor %}
 </div>
